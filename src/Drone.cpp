@@ -1,7 +1,10 @@
 #include <Drone.h>
+#include <CommandHandler.h>
 
 Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, int simport, int takeoffalt, int returnaltitude, CPlusPlusLogging::Logger* pLoggerInstance)
-    {
+    {        
+        cout<<droneid<<usesimulator<<linuxDeviceSerialPort<<simport<<takeoffalt<<returnaltitude<<endl;
+
         this->droneId = droneid;//drone identifier
         this->useSimulator = usesimulator;//use simulator or connect to flight controller
         this->linuxDevicePort = linuxDeviceSerialPort;//COM/UART port for serial comm b/w Pi and flight ctrlr
@@ -9,15 +12,20 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
         this->takeoffAltitude = takeoffalt;//default alt on takeoff
         this->returnAltitude = returnaltitude;//alt from ground
         this->pLogger = pLoggerInstance;
+        cout<<"block 1"<<endl;
         this->mavlinkConnectionObject = new Mavsdk();//This is the main class of MAVSDK (a MAVLink API Library). Used to discover vehicles and manage active connections.
+        cout<<"block 2"<<endl;
         this->droneData = new DroneData();//protobuf object
+        cout<<"block 3"<<endl;
         this->state = "DISARMED";
+        cout<<"block 4"<<endl;
         this->isActive = true;
-        this->controltab = new ControlTab(this);
+        cout<<"block 5"<<endl;
         
         if(this->useSimulator)
         {
          string raspPiIp = this->getRaspPiIP();//get the ethernet ip address of rasp pi
+         cout<<raspPiIp<<endl;
          ConnectionResult result = mavlinkConnectionObject->add_udp_connection(raspPiIp, mavlinkConnectionObject->DEFAULT_UDP_PORT);
           if (result != ConnectionResult::Success) 
           {
@@ -35,20 +43,25 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
           
           pLogger->info("MAVLINK: Connected to Flight Controller device via serial port.");
         }
-      
-      try
-      {
-        this->system = this->GetMavlinkSystemObjectForTheVehicle(mavlinkConnectionObject);
-        pLogger->info("MAVLINK: MAVSDK System object for the drone obtained and connection established with the drone.");
+       
+        //Get mavlink system object
+         try
+        {
+            this->system = this->GetMavlinkSystemObjectForTheVehicle(mavlinkConnectionObject);
+            pLogger->info("MAVLINK: MAVSDK System object for the drone obtained and connection established with the drone.");
 
-      }
-      catch(const std::exception& e)
-      {
-        this->pLogger->error(e.what());
-        this->pLogger->info("MAVLINK: No Device/FC Found. Failed to connect and obtain MAVSDK System object for the drone.");
-      }
+        }
+        catch(const std::exception& e)
+        {
+            this->pLogger->error(e.what());
+            this->pLogger->info("MAVLINK: No Device/FC Found. Failed to connect and obtain MAVSDK System object for the drone.");
+        }
+      
+     
       
       this->telemetryData = new Telemetry(this->system);//initialize Telemetry object for vehicle status update messages.
+      //Since all Drone object properties are initialized and connection to FC through mavlink enabled, create CommandHandler obj and pass the pointer to this instance
+      this->controltab = new CommandHandler(this);
       
       this->pLogger->info("DRONE: Connection succesfull");
 
@@ -261,7 +274,7 @@ if(commandData.commandCode == 22)
 
 if(commandData.commandCode == 23)
 {
-    this->controltab->cameraDOWN();
+    this->controltab->cameraDown();
     this->pLogger->info("Executing command: 'Move Camera Down', command code: 23");
     return;
 }

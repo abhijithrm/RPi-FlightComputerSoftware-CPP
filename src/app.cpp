@@ -1,11 +1,5 @@
-#include <iostream>
 #include <sstream>
-#include <string>
 #include <config4cpp/Configuration.h>
-#include <iostream>
-#include <thread>
-#include <chrono>
-#include "Logger.h"
 #include<stdlib.h>
 #include <memory>
 #include <stdexcept>
@@ -17,8 +11,6 @@
 #include <netdb.h>
 #include <ConnectionMonitor.h>
 #include <DataReceiver.h>
-#include <AppUtils.h>
-#include <Drone.h>
 #include <unistd.h>
 
 
@@ -28,6 +20,7 @@
 using namespace std;
 using namespace config4cpp;
 using namespace CPlusPlusLogging;
+
 
 
 
@@ -176,6 +169,7 @@ while(true)
 {
     try
     {
+        cout<<drone_id<<drone_use_simulator<<drone_linux_device<<drone_simulator_port<<drone_takeoff_alt<<drone_rtl_alt<<endl;
     
       //remember to delete the pointer
       drone = new Drone(drone_id, drone_use_simulator, drone_linux_device, drone_simulator_port, drone_takeoff_alt, drone_rtl_alt, pLogger);
@@ -242,17 +236,22 @@ while(drone->isActive)
         pLogger->info("");
     }
         //write drone id to socket o/p stream
-        unsigned char buff[4];
+        unsigned char buff[10];
         bzero(buff, sizeof(buff));//fill zeros
         string droneid = to_string(drone_id);
-        buff = AppUtils::createNetworkMessage(droneid);//drone id to bytes
-       int wres = write(sockfd, buff, sizeof(buff));//write to socket stream the bytes in char buffer.
+        size_t sizeOfDroneIdMessage  = AppUtils::createNetworkMessage(droneid, buff);//drone id to bytes
+        unsigned char droneIdNetworkMessageBytes[sizeOfDroneIdMessage];
+        for(int i=0; i<sizeOfDroneIdMessage; i++)
+        {
+         droneIdNetworkMessageBytes[i] = buff[i];
+        }//sizeofDroneIdMessage bytes will be written to sockt o/p stream from droneIdNetworkMessageBytes array
+        int wres = write(sockfd, droneIdNetworkMessageBytes, sizeOfDroneIdMessage);//write to socket stream the bytes in char buffer.
         cout<<"Drone with ID: "<<drone_id<<" connected to control server endpoint: "<<dronecloudapp_ip<<" "<<dronecloudapp_control_port<<endl; 
        
        //****************Creating client socket and connecting to host server******************//
         
         //*******************Start video streaming*********************//
-         try
+       /*  try
          {  //separte process for video streaming
             string command = "/usr/bin/python3 "+appDirectory+"video_streamer.py";//cmd line command for starting video streamer python process
             videoStreamerProcessReturnStatus = system(command.c_str());
@@ -261,7 +260,7 @@ while(drone->isActive)
          {
             std::cerr << e.what() << '\n';
             pLogger->error("Failed to start video_streamer python process");
-        }
+        }*/
         //*******************Start video streaming*********************//
 
          serverMessageReciever = new DataReceiver(sockfd, drone, pLogger);//remember to delete the object at the right time
@@ -269,9 +268,15 @@ while(drone->isActive)
 
         //Keep sending drone status to the server...
          while(watchdog->netStatus && drone->isActive)
-         {
-            unsigned char message[] =  AppUtils::createNetworkMessage(drone->getDroneDataSerialized());
-            write(sockfd, message, sizeof(message));
+         {  
+             unsigned char message[100];
+            size_t sizeOfMessage = AppUtils::createNetworkMessage(drone->getDroneDataSerialized(), message);
+            unsigned char networkMessageByteArray[sizeOfMessage];
+            for(int i=0; i<sizeOfMessage; i++)
+            {
+            networkMessageByteArray[i] = message[i];
+            }
+            write(sockfd, networkMessageByteArray, sizeOfMessage);
             this_thread::sleep_for(chrono::seconds(1));
          }
 
@@ -283,7 +288,7 @@ while(drone->isActive)
         std::cerr << e.what() << '\n';
         drone->freeze();
         //***********Kill process and close socket********//
-            try
+           /* try
             {
                 killProcesses("pidof video_streamer");
             }
@@ -292,7 +297,7 @@ while(drone->isActive)
                 std::cerr << e.what() << '\n';
                 pLogger->alarm("Failed killing video_streamer python process or its child processes");
             }
-            pLogger->info("Successfully killed video_streamer python process");
+            pLogger->info("Successfully killed video_streamer python process");*/
 
             close(sockfd);
             if(serverMessageReciever!=nullptr)
@@ -302,7 +307,7 @@ while(drone->isActive)
     }  
 }
 //***********Kill process and close socket********//
-    try
+   /* try
     {
         killProcesses("pidof video_streamer");
     }
@@ -314,7 +319,7 @@ while(drone->isActive)
     pLogger->info("Successfully killed video_streamer python process");
     close(sockfd);
     if(serverMessageReciever!=nullptr)
-    serverMessageReciever->stop();
+    serverMessageReciever->stop();*/
 //***********Kill process and close socket********//
 
 

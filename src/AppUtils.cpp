@@ -1,5 +1,6 @@
 #include <AppUtils.h>
-unsigned char* AppUtils::createNetworkMessage(string msg_body)
+
+size_t AppUtils::createNetworkMessage(string msg_body, unsigned char* resultMessage)
 {
     int msg_length = msg_body.length();
 
@@ -10,28 +11,28 @@ unsigned char* AppUtils::createNetworkMessage(string msg_body)
 
     for(int i=0; i<4; i++)
     {
-        networkMessage[i] = byteArray[i];
+        resultMessage[i] = byteArray[i];
     }
 
     for(int i=4; i< msg_length; i++)
     {
-        networkMessage[i] = msg_body[i];
+        resultMessage[i] = msg_body[i];
     }
-
-    return networkMessage;
+    
+    return 4+msg_length;
 }
 
- unsigned char* AppUtils::readNetworkMessage(int sockfd)
+ size_t AppUtils::readNetworkMessage(int sockfd, unsigned char* resultMessageArray)
 {
 
     unsigned char byteArray[4];
     int msgLengthRead = read(sockfd, byteArray, 4 );//read first four bytes from socket stream to get length of message body to read.
     int msgbody_length = AppUtils::byteToInt(byteArray);
 
-    unsigned char messageBody[msgbody_length];
-    int msgbody_read = read(sockfd, messageBody, msgbody_length);//read actual mssge body from socket i/p stream
+    //unsigned char messageBody[msgbody_length];
+    int msgbody_read = read(sockfd, resultMessageArray, msgbody_length);//read actual mssge body from socket i/p stream
 
-    return messageBody;
+    return msgbody_length;
 }
 
 void AppUtils::intToByte(int n, unsigned char *byteArray) {//pass a byte array and fill it
