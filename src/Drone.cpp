@@ -2,7 +2,7 @@
 #include <CommandHandler.h>
 
 Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, int simport, int takeoffalt, int returnaltitude, CPlusPlusLogging::Logger* pLoggerInstance)
-    {        
+    {      
         cout<<droneid<<usesimulator<<linuxDeviceSerialPort<<simport<<takeoffalt<<returnaltitude<<endl;
 
         this->droneId = droneid;//drone identifier
@@ -12,27 +12,31 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
         this->takeoffAltitude = takeoffalt;//default alt on takeoff
         this->returnAltitude = returnaltitude;//alt from ground
         this->pLogger = pLoggerInstance;
-        cout<<"block 1"<<endl;
         this->mavlinkConnectionObject = new Mavsdk();//This is the main class of MAVSDK (a MAVLink API Library). Used to discover vehicles and manage active connections.
-        cout<<"block 2"<<endl;
         this->droneData = new DroneData();//protobuf object
-        cout<<"block 3"<<endl;
         this->state = "DISARMED";
-        cout<<"block 4"<<endl;
         this->isActive = true;
-        cout<<"block 5"<<endl;
         
+        //*****************Connect to simulator through udp or flight controller through serial port*************//
         if(this->useSimulator)
         {
          string raspPiIp = this->getRaspPiIP();//get the ethernet ip address of rasp pi
          cout<<raspPiIp<<endl;
-         ConnectionResult result = mavlinkConnectionObject->add_udp_connection(raspPiIp, mavlinkConnectionObject->DEFAULT_UDP_PORT);
+         ConnectionResult result = mavlinkConnectionObject->add_any_connection("udp://:14540");
+         //debugging
+       
+         cout<<mavlinkConnectionObject->is_connected()<<endl;
+         cout<<mavlinkConnectionObject->systems().size()<<endl;
+         //cout<<mavlinkConnectionObject->system_uuids().at(0)<<endl;
+         //debugging
+
           if (result != ConnectionResult::Success) 
           {
-              pLogger->error("MAVLINK connection to specified UDP port and IP failed. See below for error info:");
+              pLogger->error("MAVLINK connection to simulator through specified UDP port and IP failed. See below for local ip info:");
               pLogger->info(raspPiIp.c_str());
           }
-         pLogger->info("MAVLINK: Connected to simulator via UDP port.");
+          else if(result == ConnectionResult::Success)
+          pLogger->info("MAVLINK: Connected to simulator via UDP port.");
 
         }
         else
@@ -43,58 +47,93 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
           
           pLogger->info("MAVLINK: Connected to Flight Controller device via serial port.");
         }
-       
-        //Get mavlink system object
+      //*****************Connect to simulator through udp port or flight controller through serial port*************//
+
+        //*******************Get mavlink system object**********************//
          try
         {
-            this->system = this->GetMavlinkSystemObjectForTheVehicle(mavlinkConnectionObject);
-            pLogger->info("MAVLINK: MAVSDK System object for the drone obtained and connection established with the drone.");
+           // this->GetMavlinkSystemObjectForTheVehicle(mavlinkConnectionObject);//subscribe to connect to new systems available
+            int count =0;
+             while(!(mavlinkConnectionObject->systems().size()>0))
+            {
+
+                if(count ==0)
+                {
+                pLogger->alarm("DRONE:MAVLINK: Connecting to vehicle and obtaining system object...");
+                count++;
+                }
+                
+            }
+            // Wait for the system to connect via heartbeat
+            //this->WaitUntilDiscoverSystem(this->mavlinkConnectionObject);
+            this->system = mavlinkConnectionObject->systems().at(0);
+           
+            //debugging
+            cout<<"Mavlink System ID of connected system: "<<this->system->get_system_id()<<endl;
+            cout<<"UUID of the connected system: "<<this->system->get_uuid()<<endl;
+            cout<<"Connection status: "<<this->system->is_connected()<<endl;
+            //Info *info = new Info(this->system);
+
+            if((this->system->is_connected()))
+            pLogger->info("DRONE:MAVLINK: MAVSDK System object for the drone obtained and connection established with the drone.");
 
         }
         catch(const std::exception& e)
         {
             this->pLogger->error(e.what());
-            this->pLogger->info("MAVLINK: No Device/FC Found. Failed to connect and obtain MAVSDK System object for the drone.");
+            this->pLogger->info("MAVLINK: No Vehicle/Flight Controller device found. Failed to connect and obtain MAVSDK System object for the drone.");
         }
-      
-     
-      
+      //*******************Get mavlink system object**********************//
+
       this->telemetryData = new Telemetry(this->system);//initialize Telemetry object for vehicle status update messages.
       //Since all Drone object properties are initialized and connection to FC through mavlink enabled, create CommandHandler obj and pass the pointer to this instance
+      
+        while (!telemetryData->health_all_ok()) {
+            this->pLogger->info("Waiting for system to be ready");
+            this_thread::sleep_for(chrono::seconds(1));
+        }
+
       this->controltab = new CommandHandler(this);
       
-      this->pLogger->info("DRONE: Connection succesfull");
+      this->pLogger->info("DRONE: Successfully initiated drone and control objects");
 
     }
 
-    shared_ptr<System> Drone::GetMavlinkSystemObjectForTheVehicle(Mavsdk *mavsdk)
+   void Drone::WaitUntilDiscoverSystem(Mavsdk *mavsdk)
 {
-    std::promise<void> prom;
-    std::future<void> fut = prom.get_future();
-    this->pLogger->info("MAVLINK : Waiting to discover system/vehicle...");
-    mavsdk->subscribe_on_new_system([mavsdk, &prom]() {
-    const auto system = mavsdk->systems().at(0);
+   
+    std::cout << "Waiting to discover system..." << std::endl;
+    std::promise<void> discover_promise;
+    auto discover_future = discover_promise.get_future();
 
-    if (system->is_connected()) {
-        prom.set_value();
+    mavsdk->subscribe_on_new_system([mavsdk, &discover_promise]() {
+        const auto system = mavsdk->systems().at(0);
+
+        if (system->is_connected()) {
+            std::cout << "Discovered system" << std::endl;
+            discover_promise.set_value();
         }
     });
 
-    if (fut.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-        this->pLogger->error("MAVLINK: No device/vehicle found.");
-    }
-
-    return mavsdk->systems().at(0);
+    discover_future.wait();
 }
 
-//Fetches the telemtry data from flight contrller and store data in DroneData protobuf object and return serialized DroneData
-string Drone::getDroneDataSerialized()
+//Fetches the telemtry data from flight contrller and store data in DroneData protobuf object, serialize it and return size of resulting byte array
+int Drone::getDroneDataSerialized(int videoPort, unsigned char* droneDataByteArray)
 {
     this->droneData->set_drone_id(std::to_string(this->droneId));
 
     Telemetry::Position position= telemetryData->position();//get a single Position structure containing position data
     if(position.relative_altitude_m!=NULL)
-    droneData->set_altitude(position.relative_altitude_m);
+    {
+     float alt;
+     if(position.relative_altitude_m<0)
+     alt = 0;
+     else
+     alt = position.relative_altitude_m;
+
+     droneData->set_altitude(alt);
+    }
     if(position.latitude_deg != NULL)
     droneData->set_latitude(position.latitude_deg);
     if(position.longitude_deg != NULL)
@@ -108,11 +147,24 @@ string Drone::getDroneDataSerialized()
     if(velocityData.north_m_s != NULL)
     droneData->set_speed(velocityData.north_m_s);
 
-    droneData->set_state(this->state);
+    droneData->set_state(string(this->state));
 
-    string droneDataSerialized;
-    bool serializationStatus = droneData->SerializeToString(&droneDataSerialized);
-    return droneDataSerialized;
+    droneData->set_video_port(videoPort);
+    
+    //debug code
+    cout<<"Drone data protobuf obj set values|DEBUG "<<"vol: "<<droneData->voltage()<<"alt: "<<droneData->altitude()<<"lat: "<<droneData->latitude()<<"lon: "<<droneData->longitude()<<"speed: "<<droneData->speed()<<"state: "<<droneData->state()<<"drn id: "<<droneData->drone_id()<<endl;
+    //string droneDataSerialized;
+    int bsize = droneData->ByteSize();//get the byte size of protobuf drone data object
+    
+    unsigned char * tempByteArray =  new unsigned char[bsize];
+    bool serializationStatus = droneData->SerializeToArray(tempByteArray, bsize);//serialize to byte array
+    cout<<"Drone data serialization status: "<<serializationStatus<<endl;
+    
+    for(int i =0; i<bsize; i++)
+    droneDataByteArray[i] = tempByteArray[i];
+
+    cout<<"Serialized dronedata proto obj:---> "<<droneDataByteArray<<endl;
+    return bsize;
 
 }
 

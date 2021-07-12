@@ -119,7 +119,7 @@ pLogger->debug("Message Logged using C++ Interface, Log level: LOG_DEBUG");*/
     int              drone_simulator_port;
     const char *     dronecloudapp_ip;
     int              dronecloudapp_control_port;
-    const char *     dronecloudapp_video_port;
+    int              dronecloudapp_video_port;
     int              dronecloudapp_max_reconnection_attempts;
     const char *     video_fps ;
     const char *     video_quality ;
@@ -137,7 +137,7 @@ pLogger->debug("Message Logged using C++ Interface, Log level: LOG_DEBUG");*/
         drone_simulator_port = cfg->lookupInt(scope, "drone_simulator_port");
         dronecloudapp_ip       = cfg->lookupString(scope, "dronecloudapp_ip");
         dronecloudapp_control_port = cfg->lookupInt(scope, "dronecloudapp_control_port");
-        dronecloudapp_video_port       = cfg->lookupString(scope, "dronecloudapp_video_port");
+        dronecloudapp_video_port       = cfg->lookupInt(scope, "dronecloudapp_video_port");
         dronecloudapp_max_reconnection_attempts = cfg->lookupInt(scope, "dronecloudapp_max_reconnection_attempts");
         video_fps       = cfg->lookupString(scope, "video_fps");
         video_quality = cfg->lookupString(scope, "video_quality");
@@ -152,7 +152,7 @@ pLogger->debug("Message Logged using C++ Interface, Log level: LOG_DEBUG");*/
     }
     //debugger
     cout << "drone_linux_device=" << drone_linux_device << "; video_grayscale=" << video_grayscale
-        << "; video_height=" << video_height<<drone_id
+        << "; video_height=" << video_height<<drone_id<<dronecloudapp_ip
          << endl;
 //*************************Initialize config parsing from configuration.cfg file*******************************//
 
@@ -169,7 +169,7 @@ while(true)
 {
     try
     {
-        cout<<drone_id<<drone_use_simulator<<drone_linux_device<<drone_simulator_port<<drone_takeoff_alt<<drone_rtl_alt<<endl;
+        //cout<<drone_id<<drone_use_simulator<<drone_linux_device<<drone_simulator_port<<drone_takeoff_alt<<drone_rtl_alt<<endl;
     
       //remember to delete the pointer
       drone = new Drone(drone_id, drone_use_simulator, drone_linux_device, drone_simulator_port, drone_takeoff_alt, drone_rtl_alt, pLogger);
@@ -204,7 +204,7 @@ while(drone->isActive)
                 this_thread::sleep_for(chrono::seconds(1));//run the loop until connected to wifi
             }
 
-         this_thread::sleep_for(chrono::seconds(3));
+            this_thread::sleep_for(chrono::seconds(3));
 
 //****************Creating client socket and connecting to host server******************//
     
@@ -246,6 +246,7 @@ while(drone->isActive)
          droneIdNetworkMessageBytes[i] = buff[i];
         }//sizeofDroneIdMessage bytes will be written to sockt o/p stream from droneIdNetworkMessageBytes array
         int wres = write(sockfd, droneIdNetworkMessageBytes, sizeOfDroneIdMessage);//write to socket stream the bytes in char buffer.
+        cout<<"Sending drone id: Actual bytes written to socket stream: "<<wres<<"Expected bytes to be written: "<<sizeOfDroneIdMessage<<endl;
         cout<<"Drone with ID: "<<drone_id<<" connected to control server endpoint: "<<dronecloudapp_ip<<" "<<dronecloudapp_control_port<<endl; 
        
        //****************Creating client socket and connecting to host server******************//
@@ -269,14 +270,32 @@ while(drone->isActive)
         //Keep sending drone status to the server...
          while(watchdog->netStatus && drone->isActive)
          {  
-             unsigned char message[100];
-            size_t sizeOfMessage = AppUtils::createNetworkMessage(drone->getDroneDataSerialized(), message);
+            unsigned char message[100];
+            unsigned char droneDataMessageBodyByteArray[100];
+            int byteArraySize = drone->getDroneDataSerialized(dronecloudapp_video_port, droneDataMessageBodyByteArray);
+            //cout<<droneDataMessageBodyByteArray[0]<<endl;
+            size_t sizeOfMessage = AppUtils::createNetworkMessage(droneDataMessageBodyByteArray, byteArraySize, message);
             unsigned char networkMessageByteArray[sizeOfMessage];
             for(int i=0; i<sizeOfMessage; i++)
             {
             networkMessageByteArray[i] = message[i];
             }
-            write(sockfd, networkMessageByteArray, sizeOfMessage);
+            
+            //serialization debug code-uncomment below portion to see the serialized byte info of protobuf DroneData object in terminal
+            /*unsigned char test[sizeOfMessage-4];
+            for(int i=0, j=4;j<sizeOfMessage;j++,i++)
+            {
+            test[i] = networkMessageByteArray[j];
+            cout<<"Byte no: "<<i<<"="<<test[i]<<endl;
+            }
+
+            DroneData droneData;
+            droneData.ParseFromArray(test, sizeOfMessage-4);
+            cout<<droneData.altitude()<<droneData.latitude()<<droneData.longitude()<<droneData.voltage()<<endl;*/
+            //test code
+           
+            int writeRes =  write(sockfd, networkMessageByteArray, sizeOfMessage);
+            cout<<"Drone data: Actual bytes written to socket o/p stream: "<< writeRes<<"Expected bytes needed to be sent : "<<sizeOfMessage<<endl;
             this_thread::sleep_for(chrono::seconds(1));
          }
 
@@ -316,10 +335,10 @@ while(drone->isActive)
         std::cerr << e.what() << '\n';
         pLogger->alarm("Failed killing video_streamer python process or its child processes");
     }
-    pLogger->info("Successfully killed video_streamer python process");
+    pLogger->info("Successfully killed video_streamer python process");*/
     close(sockfd);
     if(serverMessageReciever!=nullptr)
-    serverMessageReciever->stop();*/
+    serverMessageReciever->stop();
 //***********Kill process and close socket********//
 
 

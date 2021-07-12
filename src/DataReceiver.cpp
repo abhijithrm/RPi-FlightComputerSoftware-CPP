@@ -34,18 +34,20 @@ void DataReceiver::dataReceiverTask()
             unsigned char messageFromServer[1000]; 
             int messageSize = AppUtils::readNetworkMessage(this->socketFileDescriptor, messageFromServer);
             ///unsigned char receievedMessageByteArray[messageSize];
-            string receievedMessageByteArray = string();
+            unsigned char receievedMessageByteArray[messageSize];
             for(int i =0; i<messageSize; i++)
             {
              receievedMessageByteArray[i] = messageFromServer[i];
             }
+           
             Command command = Command();//ptotobuf command object according to prototype specified in .proto file
-            command.ParseFromString(receievedMessageByteArray);//parse string to protobuf command object
+            command.ParseFromArray(receievedMessageByteArray, messageSize);//parse byte array to protobuf command object
 
             CommandData commandData = CommandData();//command data dto
             commandData.commandCode = command.code();
+            cout<<"Incoming deciphered command code is: "<<commandData.commandCode<<endl;
 
-            if(command.code() == 14)//if code is 14, then payload of Command object will be list of datapoints(mission data) from server
+            if(command.code() == 14)//if code is 14, then payload of Command object will be list of datapoints(mission data) objects from server
             {
                 MissionData missionData = MissionData();
                 missionData.ParseFromString(command.payload());
@@ -79,4 +81,5 @@ void DataReceiver::start()
 void DataReceiver::stop()
 {
     this->isActive = false;
+    pthread_cancel(dataReceiverThread);
 }

@@ -1,21 +1,14 @@
 #include<CommandHandler.h>
 #include<Engine.h>
-
+using namespace std;
 CommandHandler::CommandHandler (Drone* drone)
 {
-cout<<"commhand block1"<<endl;
 this->logger = drone->pLogger;
- cout<<"commhand block2"<<endl;
 this->mavlink = drone->mavlinkConnectionObject;
- cout<<"commhand block3"<<endl;
 this->vehicle = drone->system;
- cout<<"commhand block4"<<endl;
 this->droneReference = drone;
-  cout<<drone->system->is_connected()<<endl;
- cout<<"commhand block5"<<endl;
-    cout<<this->vehicle->is_connected()<<endl;
+this->telemetryInstance = drone->telemetryData;
 this->mavsdkActionPluginObject = new Action(this->vehicle);
- cout<<"commhand block6"<<endl;
 //this->lightState = GPIO.HIGH;
 //this->ignitorState = GPIO.HIGH;
 
@@ -30,12 +23,61 @@ this->speedIncrementValueX = 0.5;
 this->speedIncrementValueY = 0.5;
 this->speedIncrementValueZ = 0.5;
 this->rotationAngle = 10;
- cout<<"commhand block7"<<endl;
 this->engine = new Engine(drone, this, this->logger);
- cout<<"commhand block8"<<endl;
 this->engine->start();
+this->logger->info("DRONE:ENGINE: Engine started.");
+ //this->armAndTakeoff(8);//test code
+
+////////test code//////
+
+   /* this->armAndTakeoff(8);//test code
+
+    std::cout<<"Increasing speed..."<<endl;
+        this->increaseSpeedX();
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+
+    cout<<"Decreasing speed..."<<endl;
+    this->decreaseSpeedX();
+
+    cout<<"Increase speed left Y..."<<endl;
+    this->leftSpeedY();
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+         this->rightSpeedY();
+
+   
 
 
+    
+    this->decreaseSpeedX();
+    std::this_thread::sleep_for(std::chrono::seconds(15));
+    this->increaseSpeedX();
+
+     this->rightSpeedY();
+     std::this_thread::sleep_for(std::chrono::seconds(15));
+         this->leftSpeedY();
+
+
+
+
+
+for(int i=0; i<50;i++)
+{
+cout<<"Rotating ccw"<<endl;
+this->rotateLeft(360);
+
+cout<<"Rotating cw..."<<endl;
+this->rotateRight(360);
+
+}
+
+this->stopMovement();
+cout<<"Stopping drone"<<endl;
+
+
+this->goHome(12);
+cout<<"going home"<<endl;*/
+
+////////test code//////
 }
 
  CommandHandler::~CommandHandler()
@@ -118,6 +160,9 @@ void CommandHandler::killMotorsNow()
 
 void CommandHandler::armAndTakeoff(int takeOffAlt)
 {
+    this->engine->stopEngineConstantSpeedThread();//stop engine speed thread.
+    this->engine->offboardObjectForVelocityControl->stop();//stop offboard velocity control mode
+
     this->logger->info("DRONE : ARMING");
 
     //ARMING
@@ -166,12 +211,16 @@ void CommandHandler::armAndTakeoff(int takeOffAlt)
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
     }
+    this->engine->start();//start engine speed thread
     return;
 }
 
 void CommandHandler::goHome(float returnToLaunchAltitude)
 {
-    this->logger->info("DRONE: Returning home.");
+
+    this->logger->info("DRONE: COMMAND HANDLER: Shutting Engine thread down and returning home.");
+
+    this->engine->stopEngineConstantSpeedThread();
 
     for(int i=0; i<10; i++)
     {
@@ -197,8 +246,11 @@ void CommandHandler::goHome(float returnToLaunchAltitude)
         }
         while(this->telemetryInstance->in_air())
         {
-            this->logger->info("DRONE: Vehicle still in air. On return to launch location...");
+            this->logger->info("DRONE: LANDING IN PROGRESS: Vehicle still in air. On return to launch location...");
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+
         }
+        this->logger->info("DRONE: LANDED: Vehicle reached launch location and landed successfully");
         break;
     }
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -236,9 +288,14 @@ return;
 void CommandHandler::land()
 {
     this->logger->info("DRONE: Landing...");
+    this->engine->stopEngineConstantSpeedThread();
+    this->engine->offboardObjectForVelocityControl->stop();
+
     mavsdk::Action::Result land = this->mavsdkActionPluginObject->land();
     if(land != mavsdk::Action::Result::Success)
     {
         this->logger->error("DRONE: Land operation failed...");
     }
+    else if(land == mavsdk::Action::Result::Success)
+    this->logger->error("DRONE: Land command sent successfully...");
 }

@@ -7,11 +7,17 @@
     this->comHandlerReferenceObject = comhandler;
     this->lastMissionCommandIndex = -1;
     this->logger = logger;
+    this->rotationControlFlag = false;
+    this->executingChangesFlag = false;
+    
+    //The Offboard MAVSDK plugin provides a simple API for controlling the vehicle using velocity and yaw setpoints. It is useful for tasks requiring direct control from a companion computer; for example to implement collision avoidance.
     this->offboardObjectForVelocityControl = new Offboard(this->droneReference->system);
+    
+     
 
-    this->start();
-    this->logger->info("DRONE:ENGINE: Engine started.");
+    
 }
+
 
  Engine::~Engine()
 {
@@ -24,19 +30,34 @@
 
 void Engine::executeChangesNow()
 {
+       this->executingChangesFlag = true;
        if(!this->offboardObjectForVelocityControl->is_active())
-       mavsdk::Offboard::Result offboardControlStart =  this->offboardObjectForVelocityControl->start();
+       {
+        //start offboard control
+        if(this->setOffboardSetpointAndStartOffboardVelocityControl(frame::ned))
+        this->logger->info("DRONE: ENGINE: OFFBOARD: Success.");
+        else
+        this->logger->error("DRONE: ENGINE: OFFBOARD: Failed.");
+       }
        
        //set the speed values in x,y,z as is in the command handler object speed properties
        mavsdk::Offboard::VelocityNedYaw velocityYawValues ;
        //set values in the structure according to as in the current speed values from Command Handler object.
        velocityYawValues.north_m_s = this->comHandlerReferenceObject->speedX;//set speed in compass north direction
-       velocityYawValues.east_m_s = this->comHandlerReferenceObject->speedY;//east
-       velocityYawValues.down_m_s = this->comHandlerReferenceObject->speedZ;
-       velocityYawValues.yaw_deg = 0;
+       velocityYawValues.east_m_s =  this->comHandlerReferenceObject->speedY;//east
+       velocityYawValues.down_m_s =  this->comHandlerReferenceObject->speedZ;
+       velocityYawValues.yaw_deg =   0.0f;
       
+       cout<<this->offboardObjectForVelocityControl->is_active()<<endl;
        mavsdk::Offboard::Result setVelocityYaw = this->offboardObjectForVelocityControl->set_velocity_ned(velocityYawValues);
+       this_thread::sleep_for(chrono::milliseconds(15));
 
+       if(setVelocityYaw != mavsdk::Offboard::Result::Success)
+        this->logger->error("DRONE:ENGINE: Sending command to set velocity/yaw values to drone failed");
+       else if(setVelocityYaw == mavsdk::Offboard::Result::Success)
+        this->logger->info("DRONE:ENGINE: Command to set updated velocity values send successfully to drone");
+
+       this->executingChangesFlag = false; 
 }
 
 void Engine::killMotorsNow()
@@ -44,44 +65,57 @@ void Engine::killMotorsNow()
  mavsdk:Action::Result killEngine = this->comHandlerReferenceObject->mavsdkActionPluginObject->kill();
  if(killEngine != mavsdk::Action::Result::Success)
   this->logger->info("DRONE:ENGINE: Killing engine failed.");
- this->logger->info("DRONE:ENGINE: Engine killed. Drone will fall off sky if in air");
+ else if(killEngine == mavsdk::Action::Result::Success)
+  this->logger->info("DRONE:ENGINE: Engine killed. Drone will fall off sky if in air");
 }
 
-//if direction is -1 rotate left and rotate right if 1
+//if direction is -1 rotate ccw and rotate cw if 1
 void Engine::rotate(int direction, float rotationAngle)
 {
+    this->rotationControlFlag = true;//when this flag is true, constant speed thread won't run, thus not changing the frame type abruptly and interrupting drone rotation
     mavsdk::Offboard::Result setYawAngleResult;//success flag
     do
-    {
-    if(!this->offboardObjectForVelocityControl->is_active())    
-    mavsdk::Offboard::Result offboardControlStart =  this->offboardObjectForVelocityControl->start();//start offboard control
+    {       
+        if(!this->offboardObjectForVelocityControl->is_active())   
+        { 
+          //start offboard control
+          if(this->setOffboardSetpointAndStartOffboardVelocityControl(frame::body))
+          this->logger->info("DRONE: ENGINE: OFFBOARD: Success. Frame - Body");
+          else
+          this->logger->error("DRONE: ENGINE: OFFBOARD: Failed. Frame- Body");
+        }
 
-    if(direction == 1)
-    {
-       mavsdk::Offboard::VelocityNedYaw yawValueRight;
-       yawValueRight.down_m_s = 0;
-       yawValueRight.east_m_s = 0;
-       yawValueRight.north_m_s = 0;
-       yawValueRight.yaw_deg =  rotationAngle;
-     
-     
-        setYawAngleResult = this->offboardObjectForVelocityControl->set_velocity_ned(yawValueRight);//set yaw angle. Returns Success if command sent successfully
-    }
-    else if(direction == -1)//left
-    {
-        mavsdk::Offboard::VelocityNedYaw yawValueLeft;
-        //set the values for the structure members
-        yawValueLeft.down_m_s = 0;
-        yawValueLeft.east_m_s=0;
-        yawValueLeft.north_m_s = 0;
-        yawValueLeft.yaw_deg =  360-rotationAngle;
-        setYawAngleResult = this->offboardObjectForVelocityControl->set_velocity_ned( yawValueLeft);
-    }
+        if(direction == 1)//cw
+        {
+            mavsdk::Offboard::VelocityBodyYawspeed yawDegreePerSecondValueClockWise;
+            yawDegreePerSecondValueClockWise.down_m_s =  0.0f;
+            yawDegreePerSecondValueClockWise.forward_m_s =  0.0f;
+            yawDegreePerSecondValueClockWise.right_m_s = 0.0f;
+            yawDegreePerSecondValueClockWise.yawspeed_deg_s =   rotationAngle;//cw
+            
+            setYawAngleResult = this->offboardObjectForVelocityControl->set_velocity_body(yawDegreePerSecondValueClockWise);//set yaw angle. Returns Success if command sent successfully
+            this_thread::sleep_for(chrono::seconds(1));//As we are setting the yaw degree per second value, we allow sleep for 1 sec to complete the given degree rotation and then stop offboard mode
+            mavsdk::Offboard::Result stopOffboardControl = this->offboardObjectForVelocityControl->stop();//stop offboard control mode after rotation complete. Engine speed thread will start offboard mode for NED frame every 5 seconds, or executechangesnow()
+
+
+        }
+        else if(direction == -1)//ccw
+        {
+            mavsdk::Offboard::VelocityBodyYawspeed yawDegreePerSecondValueCounterClockWise;            //set the values for the structure members
+            yawDegreePerSecondValueCounterClockWise.down_m_s =       0.0f;
+            yawDegreePerSecondValueCounterClockWise.forward_m_s=     0.0f;
+            yawDegreePerSecondValueCounterClockWise.right_m_s=       0.0f;
+            yawDegreePerSecondValueCounterClockWise.yawspeed_deg_s = -rotationAngle;//ccw
+            
+            setYawAngleResult = this->offboardObjectForVelocityControl->set_velocity_body(yawDegreePerSecondValueCounterClockWise);
+            this_thread::sleep_for(chrono::seconds(1));//Let yaw settle
+            mavsdk::Offboard::Result stopOffboardControl = this->offboardObjectForVelocityControl->stop();//stop offboard control mode
+
+        }
 
     }while(setYawAngleResult != mavsdk::Offboard::Result::Success); 
 
-    if(this->offboardObjectForVelocityControl->is_active())
-    mavsdk::Offboard::Result stopOffboardControl = this->offboardObjectForVelocityControl->stop();//stop offboard control mode
+    this->rotationControlFlag = false;
 
 }
 
@@ -98,20 +132,34 @@ void Engine::constantSpeedAndDirectionMaintainingThreadTask()
         try
         {
             //todo- any mission related condition checks, change drone state to MISSION OVER etc
+           //speed maintainence safety check: every 5 seconds, keep sending latest speed values to the vehicle, only if offboard control is inactive
            if(this->comHandlerReferenceObject->speedX !=0 || this->comHandlerReferenceObject->speedY !=0 || this->comHandlerReferenceObject->speedZ !=0)
            {
-               //initiate offboard control
-              if(!this->offboardObjectForVelocityControl->is_active()) 
-              mavsdk::Offboard::Result offboardControlStart =  this->offboardObjectForVelocityControl->start();
-             //set the speed values in x,y,z as is in the command handler object speed properties
+               //initiate offboard control if not enabled
+              if(!this->offboardObjectForVelocityControl->is_active() && !this->rotationControlFlag && !this->executingChangesFlag) 
+              {
+                 //start offboard control
+                if(this->setOffboardSetpointAndStartOffboardVelocityControl(frame::ned))
+                this->logger->info("DRONE: ENGINE: OFFBOARD: Success.");
+                else
+                this->logger->error("DRONE: ENGINE: OFFBOARD: Failed.");
+              
+
+              //set the speed values in x,y,z as is in the command handler object speed properties
               mavsdk::Offboard::VelocityNedYaw velocityYawValues;
               velocityYawValues.north_m_s = this->comHandlerReferenceObject->speedX;
               velocityYawValues.east_m_s = this->comHandlerReferenceObject->speedY;
               velocityYawValues.down_m_s =  this->comHandlerReferenceObject->speedZ;
-              velocityYawValues.yaw_deg = 0;//no change in yaw angle..no rotation
+              velocityYawValues.yaw_deg = 0;//no change in yaw angle..no rotation, only speed maintaining
                   
               mavsdk::Offboard::Result setVelocityYaw = this->offboardObjectForVelocityControl->set_velocity_ned(velocityYawValues);//send values to flight controller
-              this_thread::sleep_for(chrono::milliseconds(1500));
+              if(setVelocityYaw != mavsdk::Offboard::Result::Success)
+                this->logger->error("DRONE: ENGINE: CONSTANT SPEED THREAD: Sending command to set velocity/yaw values to drone failed");
+              else if(setVelocityYaw == mavsdk::Offboard::Result::Success) 
+                this->logger->info("DRONE: ENGINE: CONSTANT SPEED THREAD: Command to set velocity values sent successfully to drone");
+              
+              }
+              this_thread::sleep_for(chrono::milliseconds(5));
 
            }
 
@@ -128,13 +176,77 @@ void Engine::constantSpeedAndDirectionMaintainingThreadTask()
 void Engine::start()
 {
       int rc;
-      this->logger->info("");
+      this->logger->info("DRONE: ENGINE: Starting constant speed maintaining thread.");
       rc = pthread_create(&constantSpeedAndDirectionMaintainingThread, NULL, staticConstantSpeedAndDirectionThreadTask, this);
       if (rc) 
       {
         this->logger->info("");
         exit(-1);
       }
+
+}
+
+bool Engine::setOffboardSetpointAndStartOffboardVelocityControl(frame frameType)
+{
+     mavsdk::Offboard::VelocityNedYaw velocityYawNEDValuesInitialSetpoint;
+     mavsdk::Offboard::VelocityBodyYawspeed velocityYawSpeedBodyInitialSetpoint;
+     mavsdk::Offboard::Result initialOffboardSetpointSet;
+     
+     switch(frameType)
+     {
+            case frame::ned:
+            {
+                //set the values for the structure members and set velocity yaw degree ned setpoint
+                //Send one velocity setpoint before starting offboard(start()), otherwise succeeding setpoints will be rejected.
+                velocityYawNEDValuesInitialSetpoint.down_m_s=  0.0f;
+                velocityYawNEDValuesInitialSetpoint.east_m_s=  0.0f;
+                velocityYawNEDValuesInitialSetpoint.north_m_s= 0.0f;
+                velocityYawNEDValuesInitialSetpoint.yaw_deg =  0.0f;//deg
+              
+                //Stop offboard mode and set body setpoint and start offboard again for velocity body frame based control for rotation
+                this->offboardObjectForVelocityControl->stop();
+                initialOffboardSetpointSet = this->offboardObjectForVelocityControl->set_velocity_ned( velocityYawNEDValuesInitialSetpoint);
+              
+                if(initialOffboardSetpointSet == mavsdk::Offboard::Result::Success)
+                this->logger->info("DRONE: ENGINE: Initial OFFBOARD velocity NED frame setpoint set");
+                break;
+            }
+            case frame::body:
+            {
+                //set the values for the structure members and set velocity yaw-speed body setpoint
+                //Send one velocity setpoint before starting offboard(start()), otherwise succeeding setpoints will be rejected.
+                velocityYawSpeedBodyInitialSetpoint.down_m_s=       0.0f;
+                velocityYawSpeedBodyInitialSetpoint.forward_m_s=    0.0f;
+                velocityYawSpeedBodyInitialSetpoint.right_m_s=      0.0f;
+                velocityYawSpeedBodyInitialSetpoint.yawspeed_deg_s= 0.0f;//deg/s
+                
+                //Stop offboard mode and set body setpoint and start offboard again for velocity body frame based control for rotation
+                this->offboardObjectForVelocityControl->stop();
+                initialOffboardSetpointSet = this->offboardObjectForVelocityControl->set_velocity_body(velocityYawSpeedBodyInitialSetpoint);
+                
+                if(initialOffboardSetpointSet == mavsdk::Offboard::Result::Success)
+                this->logger->info("DRONE: ENGINE: Initial OFFBOARD velocity yaw-speed BODY frame setpoint set");
+                break;
+            }
+      }
+      
+      //start offboard control for whichever frame chosen
+      mavsdk::Offboard::Result offboardControlStart =  this->offboardObjectForVelocityControl->start();
+      if(offboardControlStart != mavsdk::Offboard::Result::Success)
+        this->logger->error("DRONE: ENGINE: Setting MAVSDK OFFBOARD control for vehicle failed.");
+      else if(offboardControlStart == mavsdk::Offboard::Result::Success)
+        this->logger->info("DRONE: ENGINE: OFFBOARD control enabled successfully for drone.");
+      
+      cout<<offboardControlStart<<endl;
+
+      return (initialOffboardSetpointSet == mavsdk::Offboard::Result::Success) && (offboardControlStart == mavsdk::Offboard::Result::Success);
+
+}
+
+void Engine::stopEngineConstantSpeedThread()
+{
+    pthread_cancel(constantSpeedAndDirectionMaintainingThread);
+    this->logger->info("DRONE:ENGINE: Engine constant speed maintaining thread closed.");
 
 }
 
