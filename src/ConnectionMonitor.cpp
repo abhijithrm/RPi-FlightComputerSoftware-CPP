@@ -25,7 +25,7 @@ void * ConnectionMonitor::staticConnectionMonitorTask(void *cm)//static class fu
 
 void ConnectionMonitor::connectionMonitorTask()//actual class member function which is the thread body/task
 {
-   this_thread::sleep_for(chrono::seconds(5));
+   this_thread::sleep_for(chrono::seconds(2));
    
    while(true)
    {
@@ -40,7 +40,7 @@ void ConnectionMonitor::connectionMonitorTask()//actual class member function wh
          {
             this->droneInstance->freeze();
             this->connectionAttempts = this->connectionAttempts + 1;
-            string connectionMessage = "Connection attempts: "+to_string(this->connectionAttempts)+" , max connection attempts: "+to_string(this->maxConnectionAttempts);
+            string connectionMessage = "Number of connection attempts made: "+to_string(this->connectionAttempts)+" . Maximum connection attempts: "+to_string(this->maxConnectionAttempts);
             pLogger->info(connectionMessage.c_str());
             this_thread::sleep_for(chrono::seconds(1));
             

@@ -24,8 +24,7 @@ using namespace CPlusPlusLogging;
 
 
 
-   void tokenize(std::string const &str, const char* delim, 
-            std::vector<std::string> &out) 
+void tokenize(std::string const &str, const char* delim, std::vector<std::string> &out) 
 { 
     char *token = strtok(const_cast<char*>(str.c_str()), delim); 
     while (token != nullptr) 
@@ -35,7 +34,7 @@ using namespace CPlusPlusLogging;
     } 
 }  
    
-   void killProcesses(const char* cmd) 
+void killProcesses(const char* cmd) 
 {
     std::array<char, 128> buffer;
     std::string result;
@@ -63,8 +62,6 @@ using namespace CPlusPlusLogging;
             std::cerr << e.what() << '\n';
             cout<<" Killing process "<<out[i]<<" failed"<<endl;
         }
- 
-   
  }
 //cout<<out[1]<<endl;
 return;
@@ -97,7 +94,8 @@ cout<<appDirectory<<(appDirectory+ "configuration.cfg").c_str()<<endl;
 
 
 
-/*pLogger->error("Message Logged using C++ Interface, Log level: LOG_ERROR");
+/*Logging Reference:
+pLogger->error("Message Logged using C++ Interface, Log level: LOG_ERROR");
 pLogger->alarm("Message Logged using C++ Interface, Log level: LOG_ALARM");
 pLogger->always("Message Logged using C++ Interface, Log level: LOG_ALWAYS");
 pLogger->buffer("Message Logged using C++ Interface, Log level: LOG_INFO");
@@ -156,7 +154,7 @@ pLogger->debug("Message Logged using C++ Interface, Log level: LOG_DEBUG");*/
          << endl;
 //*************************Initialize config parsing from configuration.cfg file*******************************//
 
-//cout<<drone_id<<endl;
+cout<<drone_id<<endl;
 if(drone_id != 1)//ensure whether config file was properly parsed and values read by checking drone id value
 {
     pLogger->error("Unable to succesfully read configuration file. See below INFO message for fullname of the configuration file.");
@@ -168,9 +166,7 @@ Drone *drone;
 while(true)
 {
     try
-    {
-        //cout<<drone_id<<drone_use_simulator<<drone_linux_device<<drone_simulator_port<<drone_takeoff_alt<<drone_rtl_alt<<endl;
-    
+    {    
       //remember to delete the pointer
       drone = new Drone(drone_id, drone_use_simulator, drone_linux_device, drone_simulator_port, drone_takeoff_alt, drone_rtl_alt, pLogger);
       break;
@@ -199,43 +195,46 @@ while(drone->isActive)
 {
     try
     {
-            while(!watchdog->netStatus)
-            {
-                this_thread::sleep_for(chrono::seconds(1));//run the loop until connected to wifi
-            }
+        while(!watchdog->netStatus)
+        {
+            this_thread::sleep_for(chrono::seconds(1));//run the loop until connected to internet
+        }
 
-            this_thread::sleep_for(chrono::seconds(3));
+        this_thread::sleep_for(chrono::seconds(3));
 
 //****************Creating client socket and connecting to host server******************//
     
-  
-    // socket create and varification
-   sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1) 
-    {
-        pLogger->info("Client socket creation failed...");
-        exit(0);
-    }
-    else
-        pLogger->info("Client socket successfully created..");
-        bzero(&servaddr, sizeof(servaddr));
-  
-    // assign IP, PORT
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(dronecloudapp_ip);
-    servaddr.sin_port = htons(dronecloudapp_control_port);
-  
-    // connect the client socket to server socket
-    if (connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0) {
-        pLogger->info("TCP/IP socket connection with the server failed...\n");
-        exit(0);
-    }
-    else
-    {
-        pLogger->info("TCP/IP socket connection opened with server");
-        pLogger->info("");
-    }
-        //write drone id to socket o/p stream
+    
+        // socket create and verification
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd == -1) 
+        {
+            pLogger->info("Client socket creation failed...");
+            exit(0);
+        }
+        else
+            pLogger->info("Client socket successfully created..");
+            bzero(&servaddr, sizeof(servaddr));
+    
+        // assign IP, PORT
+        servaddr.sin_family = AF_INET;
+        servaddr.sin_addr.s_addr = inet_addr(dronecloudapp_ip);
+        servaddr.sin_port = htons(dronecloudapp_control_port);
+    
+        // connect the client socket to server socket
+        int connectionResult = connect(sockfd, (SA*)&servaddr, sizeof(servaddr));
+        while(connectionResult != 0)//RETURNS 0 IF SUCCESS
+        {
+            string sout = "RPI_APP: MAIN THREAD: Attempted TCP/IP socket connection with the remote server with IP: "+ string(dronecloudapp_ip) + "and port: " + std::to_string(dronecloudapp_control_port)+" failed...Retrying in 1s.";
+            pLogger->alarm(sout);
+            pLogger->debug("APP: Please ensure server socket is listening at the mentioned port");
+            this_thread::sleep_for(chrono::seconds(1));
+            connectionResult = connect(sockfd, (SA*)&servaddr, sizeof(servaddr));
+        }
+        string sout = "RPI_APP: MAIN THREAD: TCP/IP socket connection accepeted by server with IP: "+ string(dronecloudapp_ip) + "at port: " + std::to_string(dronecloudapp_control_port);
+        pLogger->info(sout);
+        
+        //write drone id to socket o/p stream.
         unsigned char buff[10];
         bzero(buff, sizeof(buff));//fill zeros
         string droneid = to_string(drone_id);
@@ -246,8 +245,8 @@ while(drone->isActive)
          droneIdNetworkMessageBytes[i] = buff[i];
         }//sizeofDroneIdMessage bytes will be written to sockt o/p stream from droneIdNetworkMessageBytes array
         int wres = write(sockfd, droneIdNetworkMessageBytes, sizeOfDroneIdMessage);//write to socket stream the bytes in char buffer.
-        cout<<"Sending drone id: Actual bytes written to socket stream: "<<wres<<"Expected bytes to be written: "<<sizeOfDroneIdMessage<<endl;
-        cout<<"Drone with ID: "<<drone_id<<" connected to control server endpoint: "<<dronecloudapp_ip<<" "<<dronecloudapp_control_port<<endl; 
+        //cout<<"Sending drone id: Actual bytes written to socket stream: "<<wres<<"Expected bytes to be written: "<<sizeOfDroneIdMessage<<endl;
+        cout<<"Drone with ID: "<<drone_id<<" connected to control server socket endpoint: "<<dronecloudapp_ip<<": "<<dronecloudapp_control_port<<endl; 
        
        //****************Creating client socket and connecting to host server******************//
         
@@ -267,15 +266,16 @@ while(drone->isActive)
          serverMessageReciever = new DataReceiver(sockfd, drone, pLogger);//remember to delete the object at the right time
          serverMessageReciever->start();//separate thread dealing with recieving data from the server.
 
-        //Keep sending drone status to the server...
+        //Keep sending drone status(seriliazed DroneData protobuf object) to the ground server through TCP socket connection...
          while(watchdog->netStatus && drone->isActive)
+         
          {  
-            unsigned char message[100];
-            unsigned char droneDataMessageBodyByteArray[100];
+            unsigned char message[100];//temp buffer to store full network message with encode message body length 
+            unsigned char droneDataMessageBodyByteArray[100];//temp buffer to store serialized DroneData object
             int byteArraySize = drone->getDroneDataSerialized(dronecloudapp_video_port, droneDataMessageBodyByteArray);
             //cout<<droneDataMessageBodyByteArray[0]<<endl;
             size_t sizeOfMessage = AppUtils::createNetworkMessage(droneDataMessageBodyByteArray, byteArraySize, message);
-            unsigned char networkMessageByteArray[sizeOfMessage];
+            unsigned char networkMessageByteArray[sizeOfMessage];//byte array to store network message
             for(int i=0; i<sizeOfMessage; i++)
             {
             networkMessageByteArray[i] = message[i];
@@ -295,11 +295,29 @@ while(drone->isActive)
             //test code
            
             int writeRes =  write(sockfd, networkMessageByteArray, sizeOfMessage);
-            cout<<"Drone data: Actual bytes written to socket o/p stream: "<< writeRes<<"Expected bytes needed to be sent : "<<sizeOfMessage<<endl;
+            if(writeRes == -1)
+            {
+                pLogger->error("APP: MAIN THREAD: SOCKET: Failed to send drone status data through socket connection. Re-attempting...");
+                while(writeRes != -1)
+                {
+                    writeRes =  write(sockfd, networkMessageByteArray, sizeOfMessage);
+                    pLogger->error("APP: MAIN THREAD: SOCKET: Sending drone status data through socket stream failed. Re-attempting.");
+                }
+            }
+            else if (writeRes < sizeOfMessage)
+            {
+               unsigned char temp[sizeOfMessage-writeRes];
+               for(int i=0,j= writeRes; j<sizeOfMessage; i++, j++)
+               temp[i] = networkMessageByteArray[j];
+
+               writeRes =  write(sockfd, temp, sizeOfMessage-writeRes);
+
+            }
+            //cout<<"Drone status data: Actual bytes written to socket o/p stream: "<< writeRes<<". Expected bytes needed to be sent: "<<sizeOfMessage<<endl;
             this_thread::sleep_for(chrono::seconds(1));
          }
-
-
+        pLogger->alarm("RPI_APP: MAIN THREAD: Closing socket connection as internet is unavailable or drone is not active.");
+        close(sockfd);
     }
     catch(const std::exception& e)
     {

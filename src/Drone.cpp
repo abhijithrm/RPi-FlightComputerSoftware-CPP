@@ -22,11 +22,12 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
         {
          string raspPiIp = this->getRaspPiIP();//get the ethernet ip address of rasp pi
          cout<<raspPiIp<<endl;
-         ConnectionResult result = mavlinkConnectionObject->add_any_connection("udp://:14540");
+         ConnectionResult result = mavlinkConnectionObject->setup_udp_remote("192.168.1.7", 18570);
          //debugging
        
          cout<<mavlinkConnectionObject->is_connected()<<endl;
          cout<<mavlinkConnectionObject->systems().size()<<endl;
+
          //cout<<mavlinkConnectionObject->system_uuids().at(0)<<endl;
          //debugging
 
@@ -88,10 +89,14 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
       this->telemetryData = new Telemetry(this->system);//initialize Telemetry object for vehicle status update messages.
       //Since all Drone object properties are initialized and connection to FC through mavlink enabled, create CommandHandler obj and pass the pointer to this instance
       
-        while (!telemetryData->health_all_ok()) {
+       /* while (!telemetryData->health_all_ok()) 
+        {
             this->pLogger->info("Waiting for system to be ready");
+           // this->telemetryData = new Telemetry(this->system);
+           // cout<<"Connected systems: "<<this->mavlinkConnectionObject->systems().at(0)<<endl;
+           // cout<<"Mavlink connection status: "<<this->mavlinkConnectionObject->is_connected()<<endl;
             this_thread::sleep_for(chrono::seconds(1));
-        }
+        }*/
 
       this->controltab = new CommandHandler(this);
       
@@ -127,43 +132,48 @@ int Drone::getDroneDataSerialized(int videoPort, unsigned char* droneDataByteArr
     if(position.relative_altitude_m!=NULL)
     {
      float alt;
-     if(position.relative_altitude_m<0)
-     alt = 0;
-     else
      alt = position.relative_altitude_m;
-
-     droneData->set_altitude(alt);
+     droneData->set_altitude(8);//alt
     }
+
     if(position.latitude_deg != NULL)
-    droneData->set_latitude(position.latitude_deg);
+    droneData->set_latitude(65);//position.latitude_deg
+
     if(position.longitude_deg != NULL)
-    droneData->set_longitude(position.longitude_deg);
+    droneData->set_longitude(45);//position.longitude_deg
     
     Telemetry::Battery batteryData = telemetryData->battery();
     if(batteryData.remaining_percent != NULL)
-    droneData->set_voltage(batteryData.remaining_percent);
+    droneData->set_voltage(46);//batteryData.remaining_percent
 
-    Telemetry::VelocityNed velocityData= telemetryData->velocity_ned();
-    if(velocityData.north_m_s != NULL)
-    droneData->set_speed(velocityData.north_m_s);
+    float currentVelocityInForwardDirection = this->controltab->speedX;//speed in x direction is sent
+    if(currentVelocityInForwardDirection != NULL)
+    droneData->set_speed(currentVelocityInForwardDirection);
 
     droneData->set_state(string(this->state));
 
     droneData->set_video_port(videoPort);
+
+    //**************Some additional telemetry data which can be incorporated in future*************//
+    //mavsdk::Telemetry::FlightMode flightmodedata = this->telemetryData->flight_mode();
+    //**************Some additional telemetry data which can be incorporated in future*************//
+
+      
+      
     
     //debug code
-    cout<<"Drone data protobuf obj set values|DEBUG "<<"vol: "<<droneData->voltage()<<"alt: "<<droneData->altitude()<<"lat: "<<droneData->latitude()<<"lon: "<<droneData->longitude()<<"speed: "<<droneData->speed()<<"state: "<<droneData->state()<<"drn id: "<<droneData->drone_id()<<endl;
+    //cout<<"Drone data protobuf obj set values|DEBUG "<<"vol: "<<droneData->voltage()<<"alt: "<<droneData->altitude()<<"lat: "<<droneData->latitude()<<"lon: "<<droneData->longitude()<<"speed: "<<droneData->speed()<<"state: "<<droneData->state()<<"drn id: "<<droneData->drone_id()<<endl;
     //string droneDataSerialized;
     int bsize = droneData->ByteSize();//get the byte size of protobuf drone data object
     
     unsigned char * tempByteArray =  new unsigned char[bsize];
     bool serializationStatus = droneData->SerializeToArray(tempByteArray, bsize);//serialize to byte array
-    cout<<"Drone data serialization status: "<<serializationStatus<<endl;
+    //cout<<"Drone data serialization status: "<<serializationStatus<<endl;
     
     for(int i =0; i<bsize; i++)
     droneDataByteArray[i] = tempByteArray[i];
 
-    cout<<"Serialized dronedata proto obj:---> "<<droneDataByteArray<<endl;
+    //cout<<"Serialized dronedata proto obj:---> "<<droneDataByteArray<<endl;
     return bsize;
 
 }
@@ -244,6 +254,7 @@ if(commandData.commandCode == 7)
 {
     this->controltab->goHome(this->returnAltitude);
     this->pLogger->info("Executing command: 'Go Home', command code: 7");
+    this->state = "DISARMED";
     return;
 }
 

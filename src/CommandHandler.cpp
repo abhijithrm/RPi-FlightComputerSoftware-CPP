@@ -254,6 +254,7 @@ void CommandHandler::goHome(float returnToLaunchAltitude)
         break;
     }
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        this->engine->start();
         return;
 }
 
@@ -298,4 +299,9 @@ void CommandHandler::land()
     }
     else if(land == mavsdk::Action::Result::Success)
     this->logger->error("DRONE: Land command sent successfully...");
+    while(this->telemetryInstance->in_air())
+    {
+     this->logger->info("DRONE: LANDING PROGRESS: In air.");
+    }
+    this->engine->start();
 }

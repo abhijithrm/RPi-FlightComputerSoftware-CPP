@@ -4,7 +4,7 @@
 size_t AppUtils::createNetworkMessage(string msg_body, unsigned char* resultMessage)
 {
     int msg_length = msg_body.length();
-    cout<<"Network message length(int): "<<msg_length<<endl;
+    //cout<<"Network message length(int): "<<msg_length<<endl;
 
     unsigned char byteArray[4];
     AppUtils::intToByte(msg_length, byteArray);//int to bytearray
@@ -20,7 +20,7 @@ size_t AppUtils::createNetworkMessage(string msg_body, unsigned char* resultMess
     {
         resultMessage[i] = msg_body[j];
     }
-    cout<<"AppUtils: Create net mssgee: total length of byte array:"<<4+msg_length<<endl;
+    //cout<<"AppUtils: Create net mssgee: total length of byte array:"<<4+msg_length<<endl;
     return 4+msg_length;
 }
 
@@ -28,7 +28,7 @@ size_t AppUtils::createNetworkMessage(string msg_body, unsigned char* resultMess
 size_t AppUtils::createNetworkMessage(unsigned char* messageBodyByteArray, int messageByteSize, unsigned char* resultMessage)
 {
     
-    cout<<"Network message length(int): "<<messageByteSize<<endl;
+    //cout<<"Network message length(int): "<<messageByteSize<<endl;
 
     unsigned char byteArray[4];
     AppUtils::intToByte(messageByteSize, byteArray);//int to bytearray
@@ -44,7 +44,7 @@ size_t AppUtils::createNetworkMessage(unsigned char* messageBodyByteArray, int m
     {
         resultMessage[i] = messageBodyByteArray[j];
     }
-    cout<<"AppUtils: Created network message. Total length of result byte array:"<<4+messageByteSize<<endl;
+    //cout<<"AppUtils: Created network message. Total length of result byte array:"<<4+messageByteSize<<endl;
     return 4+messageByteSize;
 }
 
