@@ -66,6 +66,8 @@ void killProcesses(const char* cmd)
 //cout<<out[1]<<endl;
 return;
 }
+
+
     
 int main(int argc, char * argv[])
 {   
@@ -168,7 +170,7 @@ while(true)
     try
     {    
       //remember to delete the pointer
-      drone = new Drone(drone_id, drone_use_simulator, drone_linux_device, drone_simulator_port, drone_takeoff_alt, drone_rtl_alt, pLogger);
+      drone = new Drone(drone_id, drone_use_simulator, drone_linux_device, drone_simulator_port, drone_takeoff_alt, drone_rtl_alt, pLogger, dronecloudapp_ip);
       break;
     
     }
@@ -209,11 +211,11 @@ while(drone->isActive)
         sockfd = socket(AF_INET, SOCK_STREAM, 0);
         if (sockfd == -1) 
         {
-            pLogger->info("Client socket creation failed...");
+            pLogger->info("[APP] [MAIN THREAD]: Client socket creation failed...");
             exit(0);
         }
         else
-            pLogger->info("Client socket successfully created..");
+            pLogger->info("[APP] [MAIN THREAD]: Client socket successfully created..");
             bzero(&servaddr, sizeof(servaddr));
     
         // assign IP, PORT
@@ -222,16 +224,14 @@ while(drone->isActive)
         servaddr.sin_port = htons(dronecloudapp_control_port);
     
         // connect the client socket to server socket
-        int connectionResult = connect(sockfd, (SA*)&servaddr, sizeof(servaddr));
-        while(connectionResult != 0)//RETURNS 0 IF SUCCESS
+        int animCounter = 0;
+        while(connect(sockfd, (SA*)&servaddr, sizeof(servaddr)) != 0)//RETURNS 0 IF SUCCESS
         {
-            string sout = "RPI_APP: MAIN THREAD: Attempted TCP/IP socket connection with the remote server with IP: "+ string(dronecloudapp_ip) + "and port: " + std::to_string(dronecloudapp_control_port)+" failed...Retrying in 1s.";
-            pLogger->alarm(sout);
-            pLogger->debug("APP: Please ensure server socket is listening at the mentioned port");
+            string sout = "[APP] [MAIN THREAD] [CONTROL SOCKET]: Attempting TCP socket connection with server. Server IP: "+ string(dronecloudapp_ip) + ". Port: " + std::to_string(dronecloudapp_control_port);
+            animCounter = AppUtils::waitingConsoleAnimation(animCounter, sout, pLogger);
             this_thread::sleep_for(chrono::seconds(1));
-            connectionResult = connect(sockfd, (SA*)&servaddr, sizeof(servaddr));
         }
-        string sout = "RPI_APP: MAIN THREAD: TCP/IP socket connection accepeted by server with IP: "+ string(dronecloudapp_ip) + "at port: " + std::to_string(dronecloudapp_control_port);
+        string sout = "[APP] [MAIN THREAD]: TCP socket connection accepeted by server with IP: "+ string(dronecloudapp_ip) + " at port: " + std::to_string(dronecloudapp_control_port);
         pLogger->info(sout);
         
         //write drone id to socket o/p stream.
@@ -251,7 +251,7 @@ while(drone->isActive)
        //****************Creating client socket and connecting to host server******************//
         
         //*******************Start video streaming*********************//
-       /*  try
+         /*try
          {  //separte process for video streaming
             string command = "/usr/bin/python3 "+appDirectory+"video_streamer.py";//cmd line command for starting video streamer python process
             videoStreamerProcessReturnStatus = system(command.c_str());
@@ -259,7 +259,7 @@ while(drone->isActive)
          catch(const std::exception& e)
          {
             std::cerr << e.what() << '\n';
-            pLogger->error("Failed to start video_streamer python process");
+            pLogger->error("[APP] [VIDEO STREAMER]: Failed to start video_streamer python process");
         }*/
         //*******************Start video streaming*********************//
 
@@ -316,7 +316,8 @@ while(drone->isActive)
             //cout<<"Drone status data: Actual bytes written to socket o/p stream: "<< writeRes<<". Expected bytes needed to be sent: "<<sizeOfMessage<<endl;
             this_thread::sleep_for(chrono::seconds(1));
          }
-        pLogger->alarm("RPI_APP: MAIN THREAD: Closing socket connection as internet is unavailable or drone is not active.");
+        pLogger->alarm("APP: MAIN THREAD: Closing socket connection and stopping data reciever thread as internet is unavailable or drone is not active.");
+        serverMessageReciever->stop();//stop data receiver thread before closing socket, or else we get segmentation fault while the thread tries to write to a closed sock stream
         close(sockfd);
     }
     catch(const std::exception& e)
@@ -335,16 +336,16 @@ while(drone->isActive)
                 pLogger->alarm("Failed killing video_streamer python process or its child processes");
             }
             pLogger->info("Successfully killed video_streamer python process");*/
-
-            close(sockfd);
+           
             if(serverMessageReciever!=nullptr)
-            serverMessageReciever->stop();
+              serverMessageReciever->stop();
+            close(sockfd);
         //***********Kill process and close socket********//
 
     }  
 }
 //***********Kill process and close socket********//
-   /* try
+    /*try
     {
         killProcesses("pidof video_streamer");
     }
@@ -354,17 +355,17 @@ while(drone->isActive)
         pLogger->alarm("Failed killing video_streamer python process or its child processes");
     }
     pLogger->info("Successfully killed video_streamer python process");*/
-    close(sockfd);
     if(serverMessageReciever!=nullptr)
-    serverMessageReciever->stop();
+      serverMessageReciever->stop();
+    close(sockfd);
+   
 //***********Kill process and close socket********//
 
 
+serverMessageReciever->~DataReceiver();
+watchdog->~ConnectionMonitor();
 drone->close();
 cfg->destroy();
-delete watchdog;
-delete serverMessageReciever;
-
 
 return 0;
 }

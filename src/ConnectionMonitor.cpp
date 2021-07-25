@@ -8,13 +8,13 @@ ConnectionMonitor:: ConnectionMonitor(Drone *drn, const char* ip, int maxConn , 
  this->connectionAttempts = 0;
  this->netStatus = false;
  this->pLogger = logger;
-
 }
 
 ConnectionMonitor::~ConnectionMonitor()
 {
    pthread_cancel(thread);
    pLogger->info("Connection Monitor thread closed.");
+   delete this;
 }
 
 
@@ -25,23 +25,31 @@ void * ConnectionMonitor::staticConnectionMonitorTask(void *cm)//static class fu
 
 void ConnectionMonitor::connectionMonitorTask()//actual class member function which is the thread body/task
 {
-   this_thread::sleep_for(chrono::seconds(2));
-   
+   //this_thread::sleep_for(chrono::milliseconds(100));
+   int animCounter;
    while(true)
    {
       try
       {
+         
          if(isInternetOn())
          {
+            if(this->connectionAttempts != 0)
+             string connectionMessage = "Number of connection attempts made: "+to_string(this->connectionAttempts)+" . Maximum connection attempts: "+to_string(this->maxConnectionAttempts);
+
+            animCounter = 0;
             this->connectionAttempts = 0;
             this_thread::sleep_for(chrono::seconds(1));
          }
          else
          {
-            this->droneInstance->freeze();
+            if(this->connectionAttempts == 0)
+             this->droneInstance->freeze();//freeze command send only once
+
             this->connectionAttempts = this->connectionAttempts + 1;
-            string connectionMessage = "Number of connection attempts made: "+to_string(this->connectionAttempts)+" . Maximum connection attempts: "+to_string(this->maxConnectionAttempts);
-            pLogger->info(connectionMessage.c_str());
+   
+            string sout = "[Connection Monitor]: Internet connection lost. Waiting for network..";
+            animCounter = AppUtils::waitingConsoleAnimation(animCounter, sout, this->pLogger);
             this_thread::sleep_for(chrono::seconds(1));
             
             if(this->connectionAttempts == this->maxConnectionAttempts)
@@ -58,6 +66,7 @@ void ConnectionMonitor::connectionMonitorTask()//actual class member function wh
          this_thread::sleep_for(chrono::seconds(2));
       }
    }
+   this->restart();//close and start the thread after breaking out of while loop
 }
 
 void ConnectionMonitor::start()
@@ -72,9 +81,16 @@ void ConnectionMonitor::start()
       }
 }
 
-//Checks for internet connection by pinging 1 request to server ip address..
+void ConnectionMonitor::restart()
+{
+   pthread_cancel(thread);
+   this->start();
+}
+
+
 bool ConnectionMonitor::isInternetOn()
 {
+   //Checks for internet connection by pinging 1 request to server ip address..
    try
    {
       string hostip = string(this->hostIp);

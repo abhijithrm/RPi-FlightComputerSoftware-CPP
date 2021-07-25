@@ -14,7 +14,8 @@ DataReceiver::~DataReceiver()
 {
    pthread_cancel(dataReceiverThread);
    pLogger->info("DataReciever thread stopped....");
-  
+   delete this;
+
 }
 
 //static thread task function wrapper...passed to pthread

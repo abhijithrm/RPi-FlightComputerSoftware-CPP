@@ -81,7 +81,9 @@ cout<<"going home"<<endl;*/
 }
 
  CommandHandler::~CommandHandler()
-{//todo
+{
+    this->engine->~Engine();
+    delete this;
 }
 
 void CommandHandler::stopMovement()

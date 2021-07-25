@@ -1,7 +1,7 @@
 #include <Drone.h>
 #include <CommandHandler.h>
 
-Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, int simport, int takeoffalt, int returnaltitude, CPlusPlusLogging::Logger* pLoggerInstance)
+Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, int simport, int takeoffalt, int returnaltitude, CPlusPlusLogging::Logger* pLoggerInstance, const char* hostip)
     {      
         cout<<droneid<<usesimulator<<linuxDeviceSerialPort<<simport<<takeoffalt<<returnaltitude<<endl;
 
@@ -16,13 +16,16 @@ Drone::Drone(int droneid, bool usesimulator, const char* linuxDeviceSerialPort, 
         this->droneData = new DroneData();//protobuf object
         this->state = "DISARMED";
         this->isActive = true;
+        this->hostServerIP = string(hostip);
         
         //*****************Connect to simulator through udp or flight controller through serial port*************//
         if(this->useSimulator)
         {
          string raspPiIp = this->getRaspPiIP();//get the ethernet ip address of rasp pi
          cout<<raspPiIp<<endl;
-         ConnectionResult result = mavlinkConnectionObject->setup_udp_remote("192.168.1.7", 18570);
+         ConnectionResult result = mavlinkConnectionObject->setup_udp_remote(this->hostServerIP, 18570);
+         //ConnectionResult result = mavlinkConnectionObject->add_tcp_connection(this->hostServerIP, 4560);
+
          //debugging
        
          cout<<mavlinkConnectionObject->is_connected()<<endl;
@@ -424,7 +427,6 @@ Drone::~Drone()
     delete this->mavlinkConnectionObject;
     delete this->droneData;
     delete this->telemetryData;
-    delete this->controltab;
+    this->controltab->~CommandHandler();
     delete this;
-
 }

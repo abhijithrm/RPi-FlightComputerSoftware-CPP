@@ -88,3 +88,30 @@ int AppUtils::byteToInt(unsigned char* byte) {
     n = n + ((byte[3] & 0x000000ff) << 24);*/
     return n;
 }
+
+int AppUtils::waitingConsoleAnimation(int counter, string consoleMessage, Logger* logger)
+{
+    if(counter == 0)
+            {
+            logger->alarm(consoleMessage);
+            //logger->debug("APP: Please ensure server socket is listening at the mentioned port");
+            }
+            else if(counter>0 && counter <11)
+            {
+                cout.flush();
+                std::cout<<"██";
+            }
+            else if(counter == 11)
+            {
+                for(int i=0; i<20;i++)
+                {
+                    std::cout<<'\b';
+                    std::cout<<" ";
+                    std::cout<<'\b';
+                }
+                counter = 0;
+            }
+            counter++;
+            return counter;
+
+}
