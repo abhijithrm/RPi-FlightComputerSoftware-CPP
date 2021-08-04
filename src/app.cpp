@@ -12,7 +12,7 @@
 #include <ConnectionMonitor.h>
 #include <DataReceiver.h>
 #include <unistd.h>
-
+#include<LogSenderSocket.h>
 
 #define SIGKILL 9
 #define SA struct sockaddr
@@ -66,7 +66,6 @@ void killProcesses(const char* cmd)
 //cout<<out[1]<<endl;
 return;
 }
-
 
     
 int main(int argc, char * argv[])
@@ -188,10 +187,12 @@ while(true)
 ConnectionMonitor *watchdog = new ConnectionMonitor(drone, dronecloudapp_ip, dronecloudapp_max_reconnection_attempts, pLogger);//remember to delete the pointer
 watchdog->start();//internet connection monitor. Separate daemon thread.
 
+
 int videoStreamerProcessReturnStatus;
 int sockfd, connfd;
 struct sockaddr_in servaddr, cli;
-DataReceiver *serverMessageReciever = nullptr;
+DataReceiver* serverMessageReciever = nullptr;
+LogSender *realTimeLogStreamer = nullptr;
 
 while(drone->isActive)
 {
@@ -262,9 +263,12 @@ while(drone->isActive)
             pLogger->error("[APP] [VIDEO STREAMER]: Failed to start video_streamer python process");
         }*/
         //*******************Start video streaming*********************//
-
+         cout<<"Current size of log queue: "<<pLogger->threadSafeQueue->getCount()<<endl;
          serverMessageReciever = new DataReceiver(sockfd, drone, pLogger);//remember to delete the object at the right time
          serverMessageReciever->start();//separate thread dealing with recieving data from the server.
+
+         realTimeLogStreamer = new LogSender(drone, pLogger, watchdog, dronecloudapp_ip, drone_id);
+         realTimeLogStreamer->start();
 
         //Keep sending drone status(seriliazed DroneData protobuf object) to the ground server through TCP socket connection...
          while(watchdog->netStatus && drone->isActive)
@@ -319,6 +323,7 @@ while(drone->isActive)
         pLogger->alarm("APP: MAIN THREAD: Closing socket connection and stopping data reciever thread as internet is unavailable or drone is not active.");
         serverMessageReciever->stop();//stop data receiver thread before closing socket, or else we get segmentation fault while the thread tries to write to a closed sock stream
         close(sockfd);
+        realTimeLogStreamer->stop();
     }
     catch(const std::exception& e)
     {
@@ -340,6 +345,8 @@ while(drone->isActive)
             if(serverMessageReciever!=nullptr)
               serverMessageReciever->stop();
             close(sockfd);
+            if(realTimeLogStreamer != nullptr)
+             realTimeLogStreamer->stop();
         //***********Kill process and close socket********//
 
     }  
@@ -358,6 +365,8 @@ while(drone->isActive)
     if(serverMessageReciever!=nullptr)
       serverMessageReciever->stop();
     close(sockfd);
+    if(realTimeLogStreamer != nullptr)
+      realTimeLogStreamer->stop();
    
 //***********Kill process and close socket********//
 
@@ -366,6 +375,7 @@ serverMessageReciever->~DataReceiver();
 watchdog->~ConnectionMonitor();
 drone->close();
 cfg->destroy();
+realTimeLogStreamer->~LogSender();
 
 return 0;
 }
